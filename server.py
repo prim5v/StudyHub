@@ -35,7 +35,8 @@ cloudinary.config(
 load_dotenv()
 app = Flask(__name__)
 CORS(app)  # Enable CORS
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
+
 
 app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
 
