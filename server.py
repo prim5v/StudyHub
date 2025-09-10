@@ -26,12 +26,12 @@ import traceback
 # ---------------------------
 
 
-cloudinary.config(
-    cloud_name="dl9ismfbn",
-    api_key="793953662339596",
-    api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE",
-    secure=True
-)
+# cloudinary.config(
+#     cloud_name="dl9ismfbn",
+#     api_key="793953662339596",
+#     api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE",
+#     secure=True
+# )
 
 
 
@@ -206,6 +206,9 @@ def init_db():
 # Debug function to detect circular references
 
 
+CLOUD_NAME = "dl9ismfbn"
+API_KEY = "793953662339596"
+API_SECRET = "nIsVkHOs6yMXAHaEVagmMRKS9UE"
 
 # Safe emit helper
 def emit_safe(event, data):
@@ -236,7 +239,7 @@ def handle_upload(data):
         print(f"File data length: {len(file_data)} characters")
 
         # Write temp file safely
-        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
+        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{secure_filename(file_name)}")
         try:
             with open(temp_path, "wb") as f:
                 f.write(base64.b64decode(file_data))
@@ -246,13 +249,25 @@ def handle_upload(data):
             emit_safe("upload_response", {"success": False, "error": f"Temp file write error: {str(e)}"})
             return
 
-        # Upload to Cloudinary
+        # Upload to Cloudinary REST API
         try:
-            upload_result = cloudinary.uploader.upload(temp_path, resource_type='raw')
+            upload_url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/auto/upload"
+            with open(temp_path, "rb") as file_obj:
+                response = requests.post(
+                    upload_url,
+                    auth=(API_KEY, API_SECRET),
+                    files={"file": file_obj},
+                    data={"resource_type": "auto"}  # auto handles image, video, raw
+                )
+            if response.status_code != 200:
+                raise Exception(f"Cloudinary API error: {response.status_code}, {response.text}")
+
+            upload_result = response.json()
             resource_url = upload_result.get("secure_url")
-            print(f"✅ Uploaded to Cloudinary: {resource_url}")
+            print(f"✅ Uploaded to Cloudinary via REST: {resource_url}")
+
         except Exception as e:
-            print(f"❌ Cloudinary upload failed: {repr(e)}")
+            print(f"❌ Cloudinary REST upload failed: {repr(e)}")
             traceback.print_exc()
             emit_safe("upload_response", {"success": False, "error": f"Cloudinary upload error: {str(e)}"})
             return
@@ -303,7 +318,6 @@ def handle_upload(data):
         print(f"❌ Unexpected exception occurred: {repr(e)}")
         traceback.print_exc()
         emit_safe("upload_response", {"success": False, "error": f"Unexpected error: {str(e)}"})
-
 
 
 
