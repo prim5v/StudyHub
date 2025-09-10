@@ -255,7 +255,7 @@ def handle_upload(data):
 
         # Determine Cloudinary resource type
         ext = file_name.lower().split('.')[-1]
-        cloud_type = "image" if ext in ["jpg", "jpeg", "png", "gif"] else "raw"
+        cloud_type = "image" if ext in ["jpg", "jpeg", "png", "gif"] else "auto"
         print(f"Uploading to Cloudinary as: {cloud_type}")
 
         upload_result = cloudinary.uploader.upload(temp_path, resource_type=cloud_type)
