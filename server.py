@@ -199,36 +199,11 @@ def init_db():
 
 
 # Debug function to detect circular references
-def detect_circular(obj, seen=None, path="root"):
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        print(f"❌ Circular reference detected at {path}")
-        return True
-    seen.add(obj_id)
-
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if detect_circular(v, seen, path + f".{k}"):
-                return True
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            if detect_circular(item, seen, path + f"[{i}]"):
-                return True
-    # Add tuple or set if needed
-    return False
 
 @socketio.on("upload_resource")
 def handle_upload(data):
     try:
         print("🔹 Received upload request:", data.keys())
-
-        # Check for circular references
-        if detect_circular(data):
-            emit("upload_response", {"success": False, "error": "Circular reference detected in payload"})
-            return
-
         sender_id = data.get("sender_id")
         course_name = data.get("course")
         resource_name = data.get("title")
@@ -237,30 +212,32 @@ def handle_upload(data):
         file_data = data.get("file_data")
         group_id = data.get("group_id")
 
-        print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
-
         if not file_data or not file_name:
-            print("❌ Missing file data or file name")
             emit("upload_response", {"success": False, "error": "Missing file or data"})
             return
 
-        print(f"File data length: {len(file_data)} characters")  # For base64 strings
+        print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
+        print(f"File data length: {len(file_data)} characters")
 
-        # Save to temp file
+        # Safe temp file
         temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
-        print(f"Writing temp file to: {temp_path}")
         with open(temp_path, "wb") as f:
             f.write(base64.b64decode(file_data))
-        print("✅ Temp file written successfully")
+        print(f"✅ Temp file written successfully at {temp_path}")
 
-        # Determine Cloudinary resource type
-        ext = file_name.lower().split('.')[-1]
-        cloud_type = "image" if ext in ["jpg", "jpeg", "png", "gif"] else "auto"
-        print(f"Uploading to Cloudinary as: {cloud_type}")
-
-        upload_result = cloudinary.uploader.upload(temp_path, resource_type=cloud_type)
-        resource_url = upload_result.get("secure_url")
-        print(f"Cloudinary upload successful, URL: {resource_url}")
+        # Upload to Cloudinary
+        try:
+            upload_result = cloudinary.uploader.upload(temp_path, resource_type='auto')  # use 'auto' to prevent recursion
+            resource_url = upload_result.get("secure_url")
+            print(f"✅ Uploaded to Cloudinary: {resource_url}")
+        except Exception as e:
+            print(f"❌ Cloudinary upload failed: {repr(e)}")
+            emit("upload_response", {"success": False, "error": str(e)})
+            return
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                print(f"✅ Temp file removed: {temp_path}")
 
         # Insert into DB
         db = get_db()
@@ -269,7 +246,6 @@ def handle_upload(data):
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         is_group = 1 if group_id else 0
 
-        print("Inserting resource into DB...")
         cursor.execute(
             """
             INSERT INTO Resources 
@@ -279,11 +255,7 @@ def handle_upload(data):
             (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
         )
         db.commit()
-        print("✅ Resource inserted into DB successfully")
-
-        # Clean up temp file
-        os.remove(temp_path)
-        print("✅ Temp file removed")
+        print(f"✅ Resource inserted into DB: {resource_id}")
 
         emit("upload_response", {
             "success": True,
@@ -293,12 +265,10 @@ def handle_upload(data):
             "is_group": is_group,
             "group_id": group_id
         })
-        print("✅ Upload response emitted successfully")
 
     except Exception as e:
-        print("❌ Exception occurred during upload:", str(e))
+        print(f"❌ Exception occurred: {repr(e)}")
         emit("upload_response", {"success": False, "error": str(e)})
-
 
 @socketio.on("get_group_resources")
 def handle_get_group_resources(data):
