@@ -199,7 +199,6 @@ def init_db():
 
 
 import base64, uuid, os, tempfile
-
 @socketio.on("upload_resource")
 def handle_upload(data):
     try:
@@ -209,33 +208,31 @@ def handle_upload(data):
         resource_type = data.get("resource_type")
         file_name = data.get("file_name")
         file_data = data.get("file_data")
-        group_id = data.get("group_id")  # ✅ group ID from client
+        group_id = data.get("group_id")
 
-        if not file_data:
-            emit("upload_response", {"success": False, "error": "No file data received"})
+        if not file_data or not file_name:
+            emit("upload_response", {"success": False, "error": "Missing file or data"})
             return
 
-        # Cross-platform safe tmp path
-        temp_dir = tempfile.gettempdir()
-        temp_path = os.path.join(temp_dir, f"{uuid.uuid4()}_{file_name}")
-
+        # Safe temp file
+        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
         with open(temp_path, "wb") as f:
             f.write(base64.b64decode(file_data))
 
-        upload_result = cloudinary.uploader.upload(
-            temp_path,
-            resource_type="auto" if file_name.lower().endswith((".jpg", ".jpeg", ".png", ".gif")) else "raw"
-        )
+        # Determine Cloudinary resource type
+        ext = file_name.lower().split('.')[-1]
+        cloud_type = "image" if ext in ["jpg", "jpeg", "png", "gif"] else "raw"
 
+        upload_result = cloudinary.uploader.upload(temp_path, resource_type=cloud_type)
         resource_url = upload_result.get("secure_url")
-        resource_id = str(uuid.uuid4())
-        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # ✅ Check if this is a group resource
-        is_group = 1 if group_id else 0
-
+        # Insert into DB
         db = get_db()
         cursor = db.cursor()
+        resource_id = str(uuid.uuid4())
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        is_group = 1 if group_id else 0
+
         cursor.execute(
             """
             INSERT INTO Resources 
@@ -259,7 +256,6 @@ def handle_upload(data):
 
     except Exception as e:
         emit("upload_response", {"success": False, "error": str(e)})
-
 
 
 
