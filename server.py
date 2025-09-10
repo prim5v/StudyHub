@@ -11,6 +11,7 @@ import uuid
 import hashlib
 from datetime import datetime, date
 import cloudinary
+print(f"🔹 Cloudinary SDK version: {cloudinary.__version__}")
 import cloudinary.uploader
 import threading, requests, time, os
 import base64, uuid, os, tempfile
