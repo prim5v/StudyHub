@@ -200,10 +200,20 @@ def init_db():
 
 # Debug function to detect circular references
 
+import os
+import uuid
+import base64
+import tempfile
+from datetime import datetime
+from flask_socketio import emit
+import cloudinary.uploader
+from your_database_module import get_db  # replace with your actual DB import
+
 @socketio.on("upload_resource")
 def handle_upload(data):
     try:
         print("🔹 Received upload request:", data.keys())
+
         sender_id = data.get("sender_id")
         course_name = data.get("course")
         resource_name = data.get("title")
@@ -213,28 +223,29 @@ def handle_upload(data):
         group_id = data.get("group_id")
 
         if not file_data or not file_name:
-            emit("upload_response", {"success": False, "error": "Missing file or data"})
+            emit_safe("upload_response", {"success": False, "error": "Missing file or data"})
             return
 
         print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
         print(f"File data length: {len(file_data)} characters")
 
-        # Safe temp file
+        # Save temp file safely
         temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
         with open(temp_path, "wb") as f:
             f.write(base64.b64decode(file_data))
         print(f"✅ Temp file written successfully at {temp_path}")
 
-        # Upload to Cloudinary
+        # Upload to Cloudinary as 'raw' to prevent recursion
         try:
-            upload_result = cloudinary.uploader.upload(temp_path, resource_type='auto')  # use 'auto' to prevent recursion
+            upload_result = cloudinary.uploader.upload(temp_path, resource_type='raw')
             resource_url = upload_result.get("secure_url")
             print(f"✅ Uploaded to Cloudinary: {resource_url}")
         except Exception as e:
             print(f"❌ Cloudinary upload failed: {repr(e)}")
-            emit("upload_response", {"success": False, "error": str(e)})
+            emit_safe("upload_response", {"success": False, "error": str(e)})
             return
         finally:
+            # Ensure temp file is removed
             if os.path.exists(temp_path):
                 os.remove(temp_path)
                 print(f"✅ Temp file removed: {temp_path}")
@@ -257,7 +268,7 @@ def handle_upload(data):
         db.commit()
         print(f"✅ Resource inserted into DB: {resource_id}")
 
-        emit("upload_response", {
+        emit_safe("upload_response", {
             "success": True,
             "resource_id": resource_id,
             "resource_url": resource_url,
@@ -268,7 +279,15 @@ def handle_upload(data):
 
     except Exception as e:
         print(f"❌ Exception occurred: {repr(e)}")
-        emit("upload_response", {"success": False, "error": str(e)})
+        emit_safe("upload_response", {"success": False, "error": str(e)})
+
+
+def emit_safe(event, data):
+    """Emit safely without crashing if client disconnected"""
+    try:
+        emit(event, data)
+    except Exception as e:
+        print(f"⚠️ Failed to emit {event}: {e}")
 
 @socketio.on("get_group_resources")
 def handle_get_group_resources(data):
