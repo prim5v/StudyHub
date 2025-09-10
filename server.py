@@ -6,6 +6,7 @@ eventlet.monkey_patch()  # disable eventlet's greendns
 import pymysql
 import ssl
 import os
+os.environ["CLOUDINARY_KEEP_ALIVE"] = "false"
 from dotenv import load_dotenv
 import uuid
 import hashlib
