@@ -10,6 +10,7 @@ import hashlib
 from datetime import datetime, date
 import cloudinary
 import cloudinary.uploader
+import threading, requests, time, os
 
 
 
@@ -190,6 +191,7 @@ def init_db():
 # ===================================================
 # SOCKET.IO EVENTS
 # ===================================================
+
 
 
 
@@ -1889,8 +1891,40 @@ def is_member():
 
 
 
+# ✅ Root route
+@app.route("/")
+def home():
+    return jsonify({"status": "StudyHub backend is running"})
+
+# ✅ Ping route
+@app.route("/ping")
+def ping():
+    return jsonify({"status": "ok"})
+
+# ✅ Background self-pinger
+def keep_alive():
+    url = os.getenv("RENDER_URL", "https://studyhub-8req.onrender.com")
+    while True:
+        try:
+            requests.get(url, timeout=10)
+            print(f"[KeepAlive] Pinged {url}")
+        except Exception as e:
+            print(f"[KeepAlive Error] {e}")
+        time.sleep(14 * 60)  # 14 minutes
+
+# ✅ Start pinger in a background thread
+def start_keep_alive():
+    t = threading.Thread(target=keep_alive, daemon=True)
+    t.start()
+
+
+    
+
+
+
 
 if __name__ == "__main__":
+    start_keep_alive()
     import os
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port)
