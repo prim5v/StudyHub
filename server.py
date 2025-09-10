@@ -1919,6 +1919,9 @@ def start_keep_alive():
 
 
     
+@app.route("/health")
+def health():
+    return "Backend is running!", 200
 
 
 
