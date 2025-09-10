@@ -23,11 +23,15 @@ import traceback
 # ---------------------------
 # Cloudinary Config
 # ---------------------------
+
+
 cloudinary.config(
     cloud_name="dl9ismfbn",
     api_key="793953662339596",
-    api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE"
+    api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE",
+    secure=True
 )
+
 
 
 # ---------------------------
@@ -202,30 +206,18 @@ def init_db():
 
 
 
-import os
-import uuid
-import base64
-import tempfile
-from datetime import datetime
-from flask_socketio import emit
-import cloudinary.uploader
-
-# Map file extensions to resource_type
-def get_resource_type(file_name):
-    ext = os.path.splitext(file_name)[1].lower()
-    if ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]:
-        return "image"
-    elif ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]:
-        return "video"
-    elif ext in [".mp3", ".wav", ".aac", ".ogg"]:
-        return "video"  # Cloudinary handles audio under video
-    else:
-        return "raw"  # PDFs, DOCX, ZIP, etc.
+# Safe emit helper
+def emit_safe(event, data):
+    try:
+        emit(event, data)
+    except Exception as e:
+        print(f"⚠️ Emit failed: {repr(e)}")
 
 @socketio.on("upload_resource")
 def handle_upload(data):
     try:
         print("🔹 Received upload request:", data.keys())
+
         sender_id = data.get("sender_id")
         course_name = data.get("course")
         resource_name = data.get("title")
@@ -235,74 +227,68 @@ def handle_upload(data):
         group_id = data.get("group_id")
 
         if not file_data or not file_name:
-            emit("upload_response", {"success": False, "error": "Missing file or data"})
+            print("❌ Missing file or data in request")
+            emit_safe("upload_response", {"success": False, "error": "Missing file or data"})
             return
 
         print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
         print(f"File data length: {len(file_data)} characters")
 
-        # Save to temp file
+        # Write temp file safely
         temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
-        with open(temp_path, "wb") as f:
-            f.write(base64.b64decode(file_data))
-        print(f"✅ Temp file written: {temp_path}")
-
-        # Decide correct Cloudinary type
-        cld_type = get_resource_type(file_name)
-        print(f"📌 Decided Cloudinary resource_type: {cld_type}")
-
         try:
-            if os.path.getsize(temp_path) > 10 * 1024 * 1024:  # >10 MB
-                print("📤 Using upload_large() for big file...")
-                upload_result = cloudinary.uploader.upload_large(
-                    temp_path,
-                    resource_type=cld_type,
-                    chunk_size=6_000_000,
-                    use_filename=True,
-                    unique_filename=True,
-                    overwrite=False
-                )
-            else:
-                print("📤 Using normal upload()...")
-                upload_result = cloudinary.uploader.upload(
-                    temp_path,
-                    resource_type=cld_type,
-                    use_filename=True,
-                    unique_filename=True,
-                    overwrite=False
-                )
+            with open(temp_path, "wb") as f:
+                f.write(base64.b64decode(file_data))
+            print(f"✅ Temp file written successfully at {temp_path}")
+        except Exception as e:
+            print(f"❌ Failed to write temp file: {repr(e)}")
+            emit_safe("upload_response", {"success": False, "error": f"Temp file write error: {str(e)}"})
+            return
 
+        # Upload to Cloudinary
+        try:
+            upload_result = cloudinary.uploader.upload(temp_path, resource_type='raw')
             resource_url = upload_result.get("secure_url")
             print(f"✅ Uploaded to Cloudinary: {resource_url}")
-
         except Exception as e:
             print(f"❌ Cloudinary upload failed: {repr(e)}")
-            emit("upload_response", {"success": False, "error": str(e)})
+            traceback.print_exc()
+            emit_safe("upload_response", {"success": False, "error": f"Cloudinary upload error: {str(e)}"})
             return
         finally:
             if os.path.exists(temp_path):
-                os.remove(temp_path)
-                print(f"🗑️ Temp file removed: {temp_path}")
+                try:
+                    os.remove(temp_path)
+                    print(f"✅ Temp file removed: {temp_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to remove temp file: {repr(e)}")
 
-        # Save in DB
-        db = get_db()
-        cursor = db.cursor()
-        resource_id = str(uuid.uuid4())
-        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        is_group = 1 if group_id else 0
+        # Insert resource into DB
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            resource_id = str(uuid.uuid4())
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            is_group = 1 if group_id else 0
 
-        cursor.execute(
-            """
-            INSERT INTO Resources 
-            (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
-        )
-        db.commit()
-        print(f"✅ Resource inserted into DB: {resource_id}")
+            cursor.execute(
+                """
+                INSERT INTO Resources 
+                (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+            )
+            db.commit()
+            print(f"✅ Resource inserted into DB: {resource_id}")
+        except Exception as e:
+            print(f"❌ DB insert failed: {repr(e)}")
+            traceback.print_exc()
+            emit_safe("upload_response", {"success": False, "error": f"DB insert error: {str(e)}"})
+            return
 
-        emit("upload_response", {
+        # Emit success response safely
+        emit_safe("upload_response", {
             "success": True,
             "resource_id": resource_id,
             "resource_url": resource_url,
@@ -310,10 +296,13 @@ def handle_upload(data):
             "is_group": is_group,
             "group_id": group_id
         })
+        print("✅ Upload process completed successfully")
 
     except Exception as e:
-        print(f"❌ Exception in upload handler: {repr(e)}")
-        emit("upload_response", {"success": False, "error": str(e)})
+        print(f"❌ Unexpected exception occurred: {repr(e)}")
+        traceback.print_exc()
+        emit_safe("upload_response", {"success": False, "error": f"Unexpected error: {str(e)}"})
+
 
 
 
