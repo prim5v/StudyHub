@@ -200,14 +200,6 @@ def init_db():
 
 # Debug function to detect circular references
 
-import os
-import uuid
-import base64
-import tempfile
-from datetime import datetime
-from flask_socketio import emit
-import cloudinary.uploader
-from your_database_module import get_db  # replace with your actual DB import
 
 @socketio.on("upload_resource")
 def handle_upload(data):
