@@ -56,13 +56,19 @@ app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
 
 
 
-# === DB Connection (Scoped per request) ===
 def get_db():
     if 'db' not in g:
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
+        # Absolute path to your CA certificate
+        ca_path = os.path.join(os.path.dirname(__file__), 'ca.pem')
+        if not os.path.exists(ca_path):
+            raise FileNotFoundError(f"CA certificate not found at {ca_path}")
 
+        # Create SSL context using the CA certificate
+        ssl_ctx = ssl.create_default_context(cafile=ca_path)
+        ssl_ctx.check_hostname = True
+        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+
+        # Connect to MySQL with SSL
         g.db = pymysql.connect(
             host=os.getenv("DB_HOST"),
             port=int(os.getenv("DB_PORT")),
@@ -73,8 +79,6 @@ def get_db():
             ssl=ssl_ctx
         )
     return g.db
-
-
 
 
 @app.teardown_appcontext
