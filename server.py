@@ -1,8 +1,8 @@
 from flask import Flask, g, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
-import eventlet
-eventlet.monkey_patch()  # disable eventlet's greendns
+# import eventlet
+# eventlet.monkey_patch()  # disable eventlet's greendns
 import pymysql
 import ssl
 import os
