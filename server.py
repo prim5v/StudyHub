@@ -1,8 +1,8 @@
 from flask import Flask, g, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
-# import eventlet
-# eventlet.monkey_patch()  # disable eventlet's greendns
+import eventlet
+eventlet.monkey_patch()  # disable eventlet's greendns
 import pymysql
 import ssl
 import os
@@ -44,10 +44,7 @@ cloudinary.config(
 load_dotenv()
 app = Flask(__name__)
 CORS(app)  # Enable CORS
-
-
-
-socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 
 app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
