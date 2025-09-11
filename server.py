@@ -56,13 +56,16 @@ app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
 
 
 
-# === DB Connection (Scoped per request) ===
+
 def get_db():
     if 'db' not in g:
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
+        # Path to your CA certificate
+        ca_path = os.path.join(os.path.dirname(__file__), 'ca.pem')
 
+        # Create SSL context using the CA
+        ssl_ctx = ssl.create_default_context(cafile=ca_path)
+
+        # Connect to MySQL with SSL
         g.db = pymysql.connect(
             host=os.getenv("DB_HOST"),
             port=int(os.getenv("DB_PORT")),
@@ -73,8 +76,6 @@ def get_db():
             ssl=ssl_ctx
         )
     return g.db
-
-
 
 
 @app.teardown_appcontext
