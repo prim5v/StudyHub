@@ -1,9 +1,9 @@
-from flask import Flask, g, request, jsonify
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit, join_room, leave_room
 import eventlet
 eventlet.monkey_patch()  # disable eventlet's greendns
 import pymysql
+from flask import Flask, g, request, jsonify
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit, join_room, leave_room
 import ssl
 import os
 os.environ["CLOUDINARY_KEEP_ALIVE"] = "false"
@@ -26,12 +26,12 @@ import traceback
 # ---------------------------
 
 
-# cloudinary.config(
-#     cloud_name="dl9ismfbn",
-#     api_key="793953662339596",
-#     api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE",
-#     secure=True
-# )
+cloudinary.config(
+    cloud_name="dl9ismfbn",
+    api_key="793953662339596",
+    api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE",
+    secure=True
+)
 
 
 
@@ -206,20 +206,20 @@ def init_db():
 # Debug function to detect circular references
 
 
-CLOUD_NAME = "dl9ismfbn"
-API_KEY = "793953662339596"
-API_SECRET = "nIsVkHOs6yMXAHaEVagmMRKS9UE"
 
-# Safe emit helper
-def emit_safe(event, data):
-    try:
-        emit(event, data)
-    except Exception as e:
-        print(f"⚠️ Emit failed: {repr(e)}")
 
-@socketio.on("upload_resource")
-def handle_upload(data):
+# # Configure Cloudinary
+# cloudinary.config(
+#     cloud_name="dl9ismfbn",
+#     api_key="793953662339596",
+#     api_secret="nIsVkHOs6yMXAHaEVagmMRKS9UE",
+#     secure=True
+# )
+
+@app.route("/api/upload_resource", methods=["POST"])
+def upload_resource():
     try:
+        data = request.json
         print("🔹 Received upload request:", data.keys())
 
         sender_id = data.get("sender_id")
@@ -227,59 +227,38 @@ def handle_upload(data):
         resource_name = data.get("title")
         resource_type = data.get("resource_type")
         file_name = data.get("file_name")
-        file_data = data.get("file_data")
+        file_data = data.get("file_data")   # base64 string
         group_id = data.get("group_id")
 
         if not file_data or not file_name:
-            print("❌ Missing file or data in request")
-            emit_safe("upload_response", {"success": False, "error": "Missing file or data"})
-            return
+            return jsonify({"success": False, "error": "Missing file or data"}), 400
 
         print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
         print(f"File data length: {len(file_data)} characters")
 
-        # Write temp file safely
-        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{secure_filename(file_name)}")
+        # Write to a temp file
+        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
         try:
             with open(temp_path, "wb") as f:
                 f.write(base64.b64decode(file_data))
             print(f"✅ Temp file written successfully at {temp_path}")
         except Exception as e:
-            print(f"❌ Failed to write temp file: {repr(e)}")
-            emit_safe("upload_response", {"success": False, "error": f"Temp file write error: {str(e)}"})
-            return
+            return jsonify({"success": False, "error": f"Temp file write error: {str(e)}"}), 500
 
-        # Upload to Cloudinary REST API
+        # Upload to Cloudinary
         try:
-            upload_url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/auto/upload"
-            with open(temp_path, "rb") as file_obj:
-                response = requests.post(
-                    upload_url,
-                    auth=(API_KEY, API_SECRET),
-                    files={"file": file_obj},
-                    data={"resource_type": "auto"}  # auto handles image, video, raw
-                )
-            if response.status_code != 200:
-                raise Exception(f"Cloudinary API error: {response.status_code}, {response.text}")
-
-            upload_result = response.json()
+            upload_result = cloudinary.uploader.upload(temp_path, resource_type="raw")
             resource_url = upload_result.get("secure_url")
-            print(f"✅ Uploaded to Cloudinary via REST: {resource_url}")
-
+            print(f"✅ Uploaded to Cloudinary: {resource_url}")
         except Exception as e:
-            print(f"❌ Cloudinary REST upload failed: {repr(e)}")
             traceback.print_exc()
-            emit_safe("upload_response", {"success": False, "error": f"Cloudinary upload error: {str(e)}"})
-            return
+            return jsonify({"success": False, "error": f"Cloudinary upload error: {str(e)}"}), 500
         finally:
             if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                    print(f"✅ Temp file removed: {temp_path}")
-                except Exception as e:
-                    print(f"⚠️ Failed to remove temp file: {repr(e)}")
+                os.remove(temp_path)
+                print(f"✅ Temp file removed: {temp_path}")
 
-        # Insert resource into DB
+        # Insert into DB
         try:
             db = get_db()
             cursor = db.cursor()
@@ -293,18 +272,16 @@ def handle_upload(data):
                 (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+                (sender_id, resource_id, course_name, resource_name, resource_type,
+                 resource_url, created_at, is_group, group_id)
             )
             db.commit()
             print(f"✅ Resource inserted into DB: {resource_id}")
         except Exception as e:
-            print(f"❌ DB insert failed: {repr(e)}")
             traceback.print_exc()
-            emit_safe("upload_response", {"success": False, "error": f"DB insert error: {str(e)}"})
-            return
+            return jsonify({"success": False, "error": f"DB insert error: {str(e)}"}), 500
 
-        # Emit success response safely
-        emit_safe("upload_response", {
+        return jsonify({
             "success": True,
             "resource_id": resource_id,
             "resource_url": resource_url,
@@ -312,13 +289,10 @@ def handle_upload(data):
             "is_group": is_group,
             "group_id": group_id
         })
-        print("✅ Upload process completed successfully")
 
     except Exception as e:
-        print(f"❌ Unexpected exception occurred: {repr(e)}")
         traceback.print_exc()
-        emit_safe("upload_response", {"success": False, "error": f"Unexpected error: {str(e)}"})
-
+        return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
 
 
 
