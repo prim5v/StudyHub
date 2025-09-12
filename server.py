@@ -59,9 +59,9 @@ app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
 # === DB Connection (Scoped per request) ===
 def get_db():
     if 'db' not in g:
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
+        ssl_ctx = ssl.create_default_context(cafile="/etc/ssl/certs/ca-certificates.crt")
+        ssl_ctx.check_hostname = True
+        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 
         g.db = pymysql.connect(
             host=os.getenv("DB_HOST"),
