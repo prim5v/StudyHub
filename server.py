@@ -59,7 +59,13 @@ app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
 # === DB Connection (Scoped per request) ===
 def get_db():
     if 'db' not in g:
-        ssl_ctx = ssl.create_default_context(cafile="/etc/ssl/certs/ca-certificates.crt")
+        # Decide which CA file to use
+        local_ca = os.path.join(os.path.dirname(__file__), "ca.pem")
+        render_ca = "/etc/ssl/certs/ca.pem"
+
+        cafile = render_ca if os.path.exists(render_ca) else local_ca
+
+        ssl_ctx = ssl.create_default_context(cafile=cafile)
         ssl_ctx.check_hostname = True
         ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 
