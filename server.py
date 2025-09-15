@@ -288,7 +288,7 @@ def handle_upload(data):
         # Send file to PythonAnywhere uploader
         try:
             response = requests.post(
-                "https://yourusername.pythonanywhere.com/upload",  # replace with your PA URL
+                "https://attendance4293.pythonanywhere.com/upload",  # replace with your PA URL
                 files={"file": (file_name, base64.b64decode(file_data))},
                 data={"resource_type": resource_type}
             )
