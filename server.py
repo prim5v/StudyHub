@@ -284,23 +284,36 @@ def handle_upload(data):
             return
 
         print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
+        print(f"File data length: {len(file_data)} characters")
 
-        # Send file to PythonAnywhere uploader
+        # Write temp file safely
+        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
         try:
-            response = requests.post(
-                "https://attendance4293.pythonanywhere.com/upload",  # replace with your PA URL
-                files={"file": (file_name, base64.b64decode(file_data))},
-                data={"resource_type": resource_type}
-            )
-            result = response.json()
-            if not result.get("success"):
-                raise Exception(result.get("error"))
-            resource_url = result["secure_url"]
-            print(f"✅ Uploaded via PythonAnywhere: {resource_url}")
+            with open(temp_path, "wb") as f:
+                f.write(base64.b64decode(file_data))
+            print(f"✅ Temp file written successfully at {temp_path}")
         except Exception as e:
-            print(f"❌ Upload via PA failed: {repr(e)}")
-            emit_safe("upload_response", {"success": False, "error": f"Upload error: {str(e)}"})
+            print(f"❌ Failed to write temp file: {repr(e)}")
+            emit_safe("upload_response", {"success": False, "error": f"Temp file write error: {str(e)}"})
             return
+
+        # Upload to Cloudinary
+        try:
+            upload_result = cloudinary.uploader.upload(temp_path, resource_type='raw')
+            resource_url = upload_result.get("secure_url")
+            print(f"✅ Uploaded to Cloudinary: {resource_url}")
+        except Exception as e:
+            print(f"❌ Cloudinary upload failed: {repr(e)}")
+            traceback.print_exc()
+            emit_safe("upload_response", {"success": False, "error": f"Cloudinary upload error: {str(e)}"})
+            return
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                    print(f"✅ Temp file removed: {temp_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to remove temp file: {repr(e)}")
 
         # Insert resource into DB
         try:
@@ -322,9 +335,11 @@ def handle_upload(data):
             print(f"✅ Resource inserted into DB: {resource_id}")
         except Exception as e:
             print(f"❌ DB insert failed: {repr(e)}")
+            traceback.print_exc()
             emit_safe("upload_response", {"success": False, "error": f"DB insert error: {str(e)}"})
             return
 
+        # Emit success response safely
         emit_safe("upload_response", {
             "success": True,
             "resource_id": resource_id,
@@ -337,7 +352,11 @@ def handle_upload(data):
 
     except Exception as e:
         print(f"❌ Unexpected exception occurred: {repr(e)}")
+        traceback.print_exc()
         emit_safe("upload_response", {"success": False, "error": f"Unexpected error: {str(e)}"})
+
+
+
 
 
 @socketio.on("get_group_resources")
