@@ -14,6 +14,7 @@ from datetime import datetime, date
 import cloudinary
 import cloudinary.uploader
 import threading, requests, time, os
+os.environ['RES_OPTIONS'] = 'nameserver 8.8.8.8'
 import base64, uuid, os, tempfile
 import traceback
 
