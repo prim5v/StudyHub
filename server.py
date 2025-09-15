@@ -1,5 +1,5 @@
 import eventlet
-eventlet.monkey_patch()  # disable eventlet's greendns
+eventlet.monkey_patch(dns=False)  # disable eventlet's greendns
 from flask import Flask, g, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -2021,6 +2021,15 @@ def start_keep_alive():
 @app.route("/health")
 def health():
     return "Backend is running!", 200
+
+
+@app.route("/test_dns")
+def test_dns():
+    try:
+        r = requests.get("https://api.cloudinary.com/v1_1/dl9ismfbn/raw/upload")
+        return r.text
+    except Exception as e:
+        return str(e)
 
 
 
