@@ -1,8 +1,8 @@
+import eventlet
+eventlet.monkey_patch()  # disable eventlet's greendns
 from flask import Flask, g, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
-import eventlet
-eventlet.monkey_patch()  # disable eventlet's greendns
 import pymysql
 import ssl
 import os
@@ -47,7 +47,7 @@ CORS(app)  # Enable CORS
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 
-app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
+# app.config['UPLOAD_FOLDER'] = '/home/studyhub4293/mysite/static/uploads'
 
 
 
@@ -210,6 +210,18 @@ def init_db():
 
 
 # Debug function to detect circular references
+
+
+@app.route("/test-db")
+def test_db():
+    try:
+        conn = get_db()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT NOW();")
+            result = cursor.fetchone()
+        return {"status": "ok", "time": list(result.values())[0]}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
 
@@ -1980,8 +1992,19 @@ def health():
 
 
 
+# if __name__ == "__main__":
+#     start_keep_alive()
+#     import os
+#     port = int(os.environ.get("PORT", 5000))
+#     socketio.run(app, host="0.0.0.0", port=port)
+
 if __name__ == "__main__":
-    start_keep_alive()
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port)
+    import eventlet
+    import eventlet.wsgi
+
+    # Make sure monkey_patch is at the top of your file, before Flask imports
+    # import eventlet
+    # eventlet.monkey_patch()
+
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    print("✅ Server running on http://0.0.0.0:5000")
