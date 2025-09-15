@@ -59,30 +59,60 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 # === DB Connection (Scoped per request) ===
 def get_db():
     if 'db' not in g:
-        # Common connection settings
-        db_settings = {
-            "host": os.getenv("DB_HOST"),
-            "user": os.getenv("DB_USER"),
-            "password": os.getenv("DB_PASSWORD"),
-            "database": os.getenv("DB_NAME"),
-            "port": int(os.getenv("DB_PORT", 3306)),
-            "cursorclass": pymysql.cursors.DictCursor,
-        }
+        print("🔍 [get_db] Starting database connection setup...")
 
-        # Check environment (Render vs local)
-        if os.getenv("RENDER") == "true":
-            # Use Render's CA certificates bundle
-            ssl_ca_path = "/etc/ssl/certs/ca-certificates.crt"
-            db_settings["ssl"] = {"ca": ssl_ca_path}
-        else:
-            # Local development — use Aiven’s CA if downloaded
-            ssl_ca_path = os.getenv("DB_CA", "ca.pem")
-            if os.path.exists(ssl_ca_path):
-                db_settings["ssl"] = {"ca": ssl_ca_path}
+        # Decide which CA file to use
+        local_ca = os.path.join(os.path.dirname(__file__), "ca.pem")
+        render_ca = "/etc/ssl/certs/ca.pem"
 
-        g.db = pymysql.connect(**db_settings)
+        print(f"🔍 [get_db] Checking CA files...")
+        print(f"   Local CA path: {local_ca} (exists: {os.path.exists(local_ca)})")
+        print(f"   Render CA path: {render_ca} (exists: {os.path.exists(render_ca)})")
+
+        cafile = render_ca if os.path.exists(render_ca) else local_ca
+        print(f"✅ [get_db] Using CA file: {cafile}")
+
+        # SSL Context
+        print("🔍 [get_db] Creating SSL context...")
+        ssl_ctx = ssl.create_default_context(cafile=cafile)
+        ssl_ctx.check_hostname = True
+        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        print("✅ [get_db] SSL context created successfully.")
+
+        # Load environment variables
+        db_host = os.getenv("DB_HOST")
+        db_port = os.getenv("DB_PORT")
+        db_user = os.getenv("DB_USER")
+        db_name = os.getenv("DB_NAME")
+
+        print("🔍 [get_db] Environment variables loaded:")
+        print(f"   DB_HOST={db_host}")
+        print(f"   DB_PORT={db_port}")
+        print(f"   DB_USER={db_user}")
+        print(f"   DB_NAME={db_name}")
+
+        try:
+            print("🔍 [get_db] Attempting to connect to MySQL...")
+            g.db = pymysql.connect(
+                host=db_host,
+                port=int(db_port),
+                user=db_user,
+                password=os.getenv("DB_PASSWORD"),
+                database=db_name,
+                cursorclass=pymysql.cursors.DictCursor,
+                ssl=ssl_ctx
+            )
+            print("✅ [get_db] Database connection established successfully!")
+        except Exception as e:
+            print("❌ [get_db] Failed to connect to database!")
+            print(f"   Error: {e}")
+            raise e  # Re-raise so Flask shows proper error
+
+    else:
+        print("ℹ️ [get_db] Reusing existing DB connection from g.")
 
     return g.db
+
 
 
 
