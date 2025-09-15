@@ -59,27 +59,30 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 # === DB Connection (Scoped per request) ===
 def get_db():
     if 'db' not in g:
-        # Decide which CA file to use
-        local_ca = os.path.join(os.path.dirname(__file__), "ca.pem")
-        render_ca = "/etc/ssl/certs/ca.pem"
+        # Common connection settings
+        db_settings = {
+            "host": os.getenv("DB_HOST"),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASSWORD"),
+            "database": os.getenv("DB_NAME"),
+            "port": int(os.getenv("DB_PORT", 3306)),
+            "cursorclass": pymysql.cursors.DictCursor,
+        }
 
-        cafile = render_ca if os.path.exists(render_ca) else local_ca
+        # Check environment (Render vs local)
+        if os.getenv("RENDER") == "true":
+            # Use Render's CA certificates bundle
+            ssl_ca_path = "/etc/ssl/certs/ca-certificates.crt"
+            db_settings["ssl"] = {"ca": ssl_ca_path}
+        else:
+            # Local development — use Aiven’s CA if downloaded
+            ssl_ca_path = os.getenv("DB_CA", "ca.pem")
+            if os.path.exists(ssl_ca_path):
+                db_settings["ssl"] = {"ca": ssl_ca_path}
 
-        ssl_ctx = ssl.create_default_context(cafile=cafile)
-        ssl_ctx.check_hostname = True
-        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        g.db = pymysql.connect(**db_settings)
 
-        g.db = pymysql.connect(
-            host=os.getenv("DB_HOST"),
-            port=int(os.getenv("DB_PORT")),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME"),
-            cursorclass=pymysql.cursors.DictCursor,
-            ssl=ssl_ctx
-        )
     return g.db
-
 
 
 
