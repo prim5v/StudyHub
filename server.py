@@ -849,34 +849,15 @@ def handle_all_students():
 
 @socketio.on("suggest_students")
 def handle_suggest_students(data):
-    user_id = data.get("user_id")  # <-- logged-in user's user_id
     db = get_db()
     cursor = db.cursor(pymysql.cursors.DictCursor)
 
-    # Get current user's course and year
-    cursor.execute(
-        "SELECT course_name, year FROM Users_table WHERE user_id = %s", 
-        (user_id,)
-    )
-    user = cursor.fetchone()
-    if not user:
-        emit("suggest_students_response", {"students": []})
-        return
-
-    # Fetch suggested students (exclude self) and include follow info
+    # Fetch all students (no conditions, no limit)
     cursor.execute("""
-        SELECT 
-            u.*,
-            EXISTS(
-                SELECT 1 FROM Followers f 
-                WHERE f.followers_id = %s AND f.followings_id = u.user_id
-            ) AS is_following,
-            (SELECT COUNT(*) FROM Followers f2 WHERE f2.followings_id = u.user_id) AS followers_count
-        FROM Users_table u
-        WHERE u.user_id != %s AND u.course_name = %s AND u.year = %s
-        ORDER BY u.created_at DESC
-        LIMIT 10
-    """, (user_id, user_id, user["course_name"], user["year"]))
+        SELECT * 
+        FROM Users_table
+        ORDER BY created_at DESC
+    """)
     
     suggested_students = cursor.fetchall()
 
