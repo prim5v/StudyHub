@@ -17,6 +17,7 @@ import threading, requests, time, os
 os.environ['RES_OPTIONS'] = 'nameserver 8.8.8.8'
 import base64, uuid, os, tempfile
 import traceback
+from pymysql.cursors import DictCursor
 
 
 
@@ -2161,34 +2162,39 @@ def handle_public_message(data):
 
 
 # --- Load Public Chat History ---
+# Helper to serialize datetime objects
+def serialize_datetime(obj):
+    if isinstance(obj, datetime):
+        return obj.strftime('%Y-%m-%d %H:%M:%S')
+    return obj
+
 @app.route("/api/public-messages")
 def get_public_messages():
     try:
         db = get_db()
-        cursor = db.cursor()  # default returns tuples
+        cursor = db.cursor()
+
+        # Use COLLATE to fix collation mismatch
         cursor.execute("""
             SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
             FROM Messages m
             JOIN Users_table u ON m.sender_id = u.user_id
-            WHERE m.group_id = 'PUBLIC'
+            WHERE m.group_id = 'PUBLIC' COLLATE utf8mb4_unicode_ci
             ORDER BY m.created_at ASC
             LIMIT 100
         """)
-        rows = cursor.fetchall()
-        messages = []
-        for row in rows:
-            messages.append({
-                "id": row[0],
-                "sender_id": row[1],
-                "sender_name": row[2],
-                "message": row[3],
-                "created_at": serialize_datetime(row[4])
-            })
+
+        messages = cursor.fetchall()
+
+        # Serialize datetime objects
+        for msg in messages:
+            msg["created_at"] = serialize_datetime(msg["created_at"])
+
         return jsonify(messages)
+
     except Exception as e:
+        print("Error fetching public messages:", e)
         return jsonify({"error": str(e)}), 500
-
-
 
 
 
