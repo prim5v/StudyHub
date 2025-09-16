@@ -270,6 +270,22 @@ def test_db():
         return {"status": "error", "error": str(e)}
 
 
+@app.route("/get-signature", methods=["GET"])
+def get_signature():
+    try:
+        timestamp = int(datetime.now().timestamp())
+        params_to_sign = {"timestamp": timestamp}
+        signature = cloudinary.utils.api_sign_request(params_to_sign, cloudinary.config().api_secret)
+        return jsonify({
+            "signature": signature,
+            "timestamp": timestamp,
+            "cloud_name": cloudinary.config().cloud_name,
+            "api_key": cloudinary.config().api_key
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 # Safe emit helper
 def emit_safe(event, data):
@@ -278,81 +294,126 @@ def emit_safe(event, data):
     except Exception as e:
         print(f"⚠️ Emit failed: {repr(e)}")
 
+# @socketio.on("upload_resource")
+# def handle_upload(data):
+#     try:
+#         print("🔹 Received upload request:", data.keys())
+
+#         sender_id = data.get("sender_id")
+#         course_name = data.get("course")
+#         resource_name = data.get("title")
+#         resource_type = data.get("resource_type")
+#         file_name = data.get("file_name")
+#         file_data = data.get("file_data")
+#         group_id = data.get("group_id")
+
+#         if not file_data or not file_name:
+#             print("❌ Missing file or data in request")
+#             emit_safe("upload_response", {"success": False, "error": "Missing file or data"})
+#             return
+
+#         print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
+#         print(f"File data length: {len(file_data)} characters")
+
+#         # Write temp file safely
+#         temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
+#         try:
+#             with open(temp_path, "wb") as f:
+#                 f.write(base64.b64decode(file_data))
+#             print(f"✅ Temp file written successfully at {temp_path}")
+#         except Exception as e:
+#             print(f"❌ Failed to write temp file: {repr(e)}")
+#             emit_safe("upload_response", {"success": False, "error": f"Temp file write error: {str(e)}"})
+#             return
+
+#         # Upload to Cloudinary
+#         try:
+#             upload_result = cloudinary.uploader.upload(temp_path, resource_type='raw')
+#             resource_url = upload_result.get("secure_url")
+#             print(f"✅ Uploaded to Cloudinary: {resource_url}")
+#         except Exception as e:
+#             print(f"❌ Cloudinary upload failed: {repr(e)}")
+#             traceback.print_exc()
+#             emit_safe("upload_response", {"success": False, "error": f"Cloudinary upload error: {str(e)}"})
+#             return
+#         finally:
+#             if os.path.exists(temp_path):
+#                 try:
+#                     os.remove(temp_path)
+#                     print(f"✅ Temp file removed: {temp_path}")
+#                 except Exception as e:
+#                     print(f"⚠️ Failed to remove temp file: {repr(e)}")
+
+#         # Insert resource into DB
+#         try:
+#             db = get_db()
+#             cursor = db.cursor()
+#             resource_id = str(uuid.uuid4())
+#             created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#             is_group = 1 if group_id else 0
+
+#             cursor.execute(
+#                 """
+#                 INSERT INTO Resources 
+#                 (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+#                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+#                 """,
+#                 (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+#             )
+#             db.commit()
+#             print(f"✅ Resource inserted into DB: {resource_id}")
+#         except Exception as e:
+#             print(f"❌ DB insert failed: {repr(e)}")
+#             traceback.print_exc()
+#             emit_safe("upload_response", {"success": False, "error": f"DB insert error: {str(e)}"})
+#             return
+
+#         # Emit success response safely
+#         emit_safe("upload_response", {
+#             "success": True,
+#             "resource_id": resource_id,
+#             "resource_url": resource_url,
+#             "resource_type": resource_type,
+#             "is_group": is_group,
+#             "group_id": group_id
+#         })
+#         print("✅ Upload process completed successfully")
+
+#     except Exception as e:
+#         print(f"❌ Unexpected exception occurred: {repr(e)}")
+#         traceback.print_exc()
+#         emit_safe("upload_response", {"success": False, "error": f"Unexpected error: {str(e)}"})
+
 @socketio.on("upload_resource")
 def handle_upload(data):
     try:
-        print("🔹 Received upload request:", data.keys())
-
         sender_id = data.get("sender_id")
         course_name = data.get("course")
         resource_name = data.get("title")
         resource_type = data.get("resource_type")
-        file_name = data.get("file_name")
-        file_data = data.get("file_data")
+        resource_url = data.get("resource_url")   # ✅ frontend gives this now
         group_id = data.get("group_id")
 
-        if not file_data or not file_name:
-            print("❌ Missing file or data in request")
-            emit_safe("upload_response", {"success": False, "error": "Missing file or data"})
+        if not resource_url:
+            emit_safe("upload_response", {"success": False, "error": "Missing Cloudinary URL"})
             return
 
-        print(f"Sender: {sender_id}, Course: {course_name}, Resource: {resource_name}, File: {file_name}, Group: {group_id}")
-        print(f"File data length: {len(file_data)} characters")
+        db = get_db()
+        cursor = db.cursor()
+        resource_id = str(uuid.uuid4())
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        is_group = 1 if group_id else 0
 
-        # Write temp file safely
-        temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{file_name}")
-        try:
-            with open(temp_path, "wb") as f:
-                f.write(base64.b64decode(file_data))
-            print(f"✅ Temp file written successfully at {temp_path}")
-        except Exception as e:
-            print(f"❌ Failed to write temp file: {repr(e)}")
-            emit_safe("upload_response", {"success": False, "error": f"Temp file write error: {str(e)}"})
-            return
+        cursor.execute(
+            """
+            INSERT INTO Resources 
+            (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
+        )
+        db.commit()
 
-        # Upload to Cloudinary
-        try:
-            upload_result = cloudinary.uploader.upload(temp_path, resource_type='raw')
-            resource_url = upload_result.get("secure_url")
-            print(f"✅ Uploaded to Cloudinary: {resource_url}")
-        except Exception as e:
-            print(f"❌ Cloudinary upload failed: {repr(e)}")
-            traceback.print_exc()
-            emit_safe("upload_response", {"success": False, "error": f"Cloudinary upload error: {str(e)}"})
-            return
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                    print(f"✅ Temp file removed: {temp_path}")
-                except Exception as e:
-                    print(f"⚠️ Failed to remove temp file: {repr(e)}")
-
-        # Insert resource into DB
-        try:
-            db = get_db()
-            cursor = db.cursor()
-            resource_id = str(uuid.uuid4())
-            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            is_group = 1 if group_id else 0
-
-            cursor.execute(
-                """
-                INSERT INTO Resources 
-                (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (sender_id, resource_id, course_name, resource_name, resource_type, resource_url, created_at, is_group, group_id)
-            )
-            db.commit()
-            print(f"✅ Resource inserted into DB: {resource_id}")
-        except Exception as e:
-            print(f"❌ DB insert failed: {repr(e)}")
-            traceback.print_exc()
-            emit_safe("upload_response", {"success": False, "error": f"DB insert error: {str(e)}"})
-            return
-
-        # Emit success response safely
         emit_safe("upload_response", {
             "success": True,
             "resource_id": resource_id,
@@ -361,11 +422,7 @@ def handle_upload(data):
             "is_group": is_group,
             "group_id": group_id
         })
-        print("✅ Upload process completed successfully")
-
     except Exception as e:
-        print(f"❌ Unexpected exception occurred: {repr(e)}")
-        traceback.print_exc()
         emit_safe("upload_response", {"success": False, "error": f"Unexpected error: {str(e)}"})
 
 
