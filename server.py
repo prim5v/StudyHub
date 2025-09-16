@@ -2170,32 +2170,37 @@ def serialize_datetime(obj):
 
 @app.route("/api/public-messages")
 def get_public_messages():
-    db = get_db()
-    cursor = db.cursor(pymysql.cursors.DictCursor)  # make sure you're using a dictionary cursor
     try:
-        cursor.execute("""
-            SELECT 
-                m.id, 
-                m.sender_id COLLATE utf8mb4_0900_ai_ci AS sender_id,
-                u.name AS sender_name, 
-                m.message, 
-                m.created_at
-            FROM Messages m
-            JOIN Users_table u 
-                ON m.sender_id COLLATE utf8mb4_0900_ai_ci = u.user_id
-            WHERE m.group_id COLLATE utf8mb4_0900_ai_ci = 'PUBLIC'
-            ORDER BY m.created_at ASC
-            LIMIT 100
-        """)
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+
+        query = """
+        SELECT 
+            m.id, 
+            m.sender_id, 
+            COALESCE(u.name, 'Unknown') AS sender_name, 
+            m.message, 
+            m.created_at
+        FROM Messages m
+        LEFT JOIN Users_table u 
+            ON m.sender_id COLLATE utf8mb4_0900_ai_ci = u.user_id COLLATE utf8mb4_0900_ai_ci
+        WHERE m.group_id COLLATE utf8mb4_0900_ai_ci = 'PUBLIC'
+        ORDER BY m.created_at ASC
+        LIMIT 100
+        """
+
+        cursor.execute(query)
         messages = cursor.fetchall()
 
         for msg in messages:
             msg["created_at"] = serialize_datetime(msg["created_at"])
 
         return jsonify(messages)
-    except Exception as e:
+
+    except Error as e:
         print("Error fetching public messages:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 
