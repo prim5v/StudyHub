@@ -2134,7 +2134,7 @@ def handle_public_message(data):
     message = data.get("message")
 
     db = get_db()
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor()
 
     # ✅ Save message in DB with group_id = PUBLIC
     cursor.execute("""
@@ -2164,7 +2164,7 @@ def handle_public_message(data):
 @app.route("/api/public-messages")
 def get_public_messages():
     db = get_db()
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor()
     cursor.execute("""
         SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
         FROM Messages m
