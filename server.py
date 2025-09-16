@@ -2163,22 +2163,26 @@ def handle_public_message(data):
 # --- Load Public Chat History ---
 @app.route("/api/public-messages")
 def get_public_messages():
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("""
-        SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
-        FROM Messages m
-        JOIN Users_table u ON m.sender_id = u.user_id
-        WHERE m.group_id = 'PUBLIC'
-        ORDER BY m.created_at ASC
-        LIMIT 100
-    """)
-    messages = cursor.fetchall()
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
+            FROM Messages m
+            JOIN Users_table u ON m.sender_id = u.user_id
+            WHERE m.group_id = 'PUBLIC'
+            ORDER BY m.created_at ASC
+            LIMIT 100
+        """)
+        messages = cursor.fetchall()
 
-    for msg in messages:
-        msg["created_at"] = serialize_datetime(msg["created_at"])
+        for msg in messages:
+            msg["created_at"] = serialize_datetime(msg["created_at"])
 
-    return jsonify(messages)
+        return jsonify(messages)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 
