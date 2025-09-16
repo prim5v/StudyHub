@@ -253,7 +253,19 @@ def test_db():
         with conn.cursor() as cursor:
             cursor.execute("SELECT NOW();")
             result = cursor.fetchone()
-        return {"status": "ok", "time": list(result.values())[0]}
+        if not result:
+            return {"status": "error", "error": "No result from DB"}
+        
+        # if tuple
+        if isinstance(result, tuple):
+            db_time = result[0]
+        # if dict (DictCursor)
+        elif isinstance(result, dict):
+            db_time = list(result.values())[0]
+        else:
+            db_time = str(result)
+
+        return {"status": "ok", "time": str(db_time)}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
