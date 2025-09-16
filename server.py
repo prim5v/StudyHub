@@ -2172,7 +2172,7 @@ def serialize_datetime(obj):
 def get_public_messages():
     try:
         db = get_db()
-        cursor = db.cursor()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
 
         # Use COLLATE to fix collation mismatch
         cursor.execute("""
