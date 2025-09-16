@@ -2165,7 +2165,7 @@ def handle_public_message(data):
 def get_public_messages():
     try:
         db = get_db()
-        cursor = db.cursor(dictionary=True)
+        cursor = db.cursor()  # default returns tuples
         cursor.execute("""
             SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
             FROM Messages m
@@ -2174,11 +2174,16 @@ def get_public_messages():
             ORDER BY m.created_at ASC
             LIMIT 100
         """)
-        messages = cursor.fetchall()
-
-        for msg in messages:
-            msg["created_at"] = serialize_datetime(msg["created_at"])
-
+        rows = cursor.fetchall()
+        messages = []
+        for row in rows:
+            messages.append({
+                "id": row[0],
+                "sender_id": row[1],
+                "sender_name": row[2],
+                "message": row[3],
+                "created_at": serialize_datetime(row[4])
+            })
         return jsonify(messages)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
