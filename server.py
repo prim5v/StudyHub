@@ -2157,8 +2157,12 @@ def handle_public_message(data):
     }
 
     # ✅ Broadcast to all users in PUBLIC room
-    socketio.emit("new_public_message", msg_data)
+    socketio.emit("new_public_message", msg_data, room="PUBLIC")
     print(f"📢 Public chat: {sender['name']} -> {message}")
+
+@socketio.on("join_public_room")
+def join_public():
+    join_room("PUBLIC")
 
 
 # --- Load Public Chat History ---
