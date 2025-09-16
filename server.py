@@ -870,6 +870,49 @@ def handle_suggest_students(data):
     # Emit results
     emit("suggest_students_response", {"students": suggested_students})
 
+# @socketio.on("suggest_students")
+# def handle_suggest_students(data):
+#     user_id = data.get("user_id")  # <-- logged-in user's user_id
+#     db = get_db()
+#     cursor = db.cursor(pymysql.cursors.DictCursor)
+
+#     # Get current user's course and year
+#     cursor.execute(
+#         "SELECT course_name, year FROM Users_table WHERE user_id = %s", 
+#         (user_id,)
+#     )
+#     user = cursor.fetchone()
+#     if not user:
+#         emit("suggest_students_response", {"students": []})
+#         return
+
+#     # Fetch suggested students (exclude self) and include follow info
+#     cursor.execute("""
+#         SELECT 
+#             u.*,
+#             EXISTS(
+#                 SELECT 1 FROM Followers f 
+#                 WHERE f.followers_id = %s AND f.followings_id = u.user_id
+#             ) AS is_following,
+#             (SELECT COUNT(*) FROM Followers f2 WHERE f2.followings_id = u.user_id) AS followers_count
+#         FROM Users_table u
+#         WHERE u.user_id != %s AND u.course_name = %s AND u.year = %s
+#         ORDER BY u.created_at DESC
+#         LIMIT 10
+#     """, (user_id, user_id, user["course_name"], user["year"]))
+    
+#     suggested_students = cursor.fetchall()
+
+#     # Convert datetime fields to strings
+#     for s in suggested_students:
+#         for key, value in s.items():
+#             if isinstance(value, datetime):
+#                 s[key] = value.strftime("%Y-%m-%d %H:%M:%S")
+    
+#     # Emit results
+#     emit("suggest_students_response", {"students": suggested_students})
+
+
 
 @socketio.on("suggest_groups")
 def handle_suggest_groups(data):
@@ -2081,6 +2124,61 @@ def test_dns():
         return r.text
     except Exception as e:
         return str(e)
+
+
+
+# --- Public Chat ---
+@socketio.on("send_public_message")
+def handle_public_message(data):
+    sender_id = data.get("sender_id")
+    message = data.get("message")
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    # ✅ Save message in DB with group_id = PUBLIC
+    cursor.execute("""
+        INSERT INTO Messages (sender_id, receivers_id, group_id, message, created_at)
+        VALUES (%s, NULL, %s, %s, NOW())
+    """, (sender_id, "PUBLIC", message))
+    db.commit()
+
+    # ✅ Fetch sender details
+    cursor.execute("SELECT name FROM Users_table WHERE user_id = %s", (sender_id,))
+    sender = cursor.fetchone()
+
+    # ✅ Build message object
+    msg_data = {
+        "sender_id": sender_id,
+        "sender_name": sender["name"],
+        "message": message,
+        "created_at": serialize_datetime(datetime.now())
+    }
+
+    # ✅ Broadcast to all users in PUBLIC room
+    socketio.emit("new_public_message", msg_data, room="PUBLIC")
+    print(f"📢 Public chat: {sender['name']} -> {message}")
+
+
+# --- Load Public Chat History ---
+@app.route("/api/public-messages")
+def get_public_messages():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
+        FROM Messages m
+        JOIN Users_table u ON m.sender_id = u.user_id
+        WHERE m.group_id = 'PUBLIC'
+        ORDER BY m.created_at ASC
+        LIMIT 100
+    """)
+    messages = cursor.fetchall()
+
+    for msg in messages:
+        msg["created_at"] = serialize_datetime(msg["created_at"])
+
+    return jsonify(messages)
 
 
 
