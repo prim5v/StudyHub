@@ -1641,11 +1641,11 @@ def handle_get_group_messages(data):
     emit('group_messages', messages)
 
 # --- Join Room ---
-from flask_socketio import SocketIO, emit, join_room
-from datetime import datetime
-from db import get_db, serialize_datetime  # adjust to your imports
+# from flask_socketio import SocketIO, emit, join_room
+# from datetime import datetime
+# from db import get_db, serialize_datetime  # adjust to your imports
 
-socketio = SocketIO(cors_allowed_origins="*")
+# socketio = SocketIO(cors_allowed_origins="*")
 
 
 # ✅ When a user joins (private or group)
