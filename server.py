@@ -1652,41 +1652,22 @@ def handle_join_room(data):
 def handle_send_message(data):
     sender_id = data['sender_id']
     receiver_id = data.get('receiver_id')
-    group_id = data.get('group_id')
+    group_id = data.get('group_id', 'UNI')
     message = data['message']
 
     db = get_db()
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor()  # Ensure fetch returns dicts
 
-    # ✅ Save message to DB
+    # ✅ Insert new message
     cursor.execute("""
         INSERT INTO Messages (sender_id, receivers_id, group_id, message, created_at)
         VALUES (%s, %s, %s, %s, NOW())
     """, (sender_id, receiver_id, group_id, message))
     db.commit()
 
-    # ✅ Create message payload
-    message_data = {
-        "sender_id": sender_id,
-        "receiver_id": receiver_id,
-        "group_id": group_id,
-        "message": message,
-        "created_at": serialize_datetime(datetime.now())
-    }
-
-    # ✅ Emit only the new message (real-time push)
-    if group_id:  
-        # Group chat → send to group room
-        socketio.emit("new_message", message_data, room=group_id)
-        print(f"📤 New group message sent to room {group_id}")
-    else:
-        # Private chat → send to both users
-        socketio.emit("new_message", message_data, room=sender_id)
-        socketio.emit("new_message", message_data, room=receiver_id)
-        print(f"📤 New private message sent to {sender_id} and {receiver_id}")
-
-    # ✅ (Optional) Emit updated chat history to receiver if you want
-    if group_id:
+    # ✅ Determine which conversation to fetch
+    if group_id and group_id != "UNI":  
+        # Fetch all group messages
         cursor.execute("""
             SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
             FROM Messages m
@@ -1695,6 +1676,7 @@ def handle_send_message(data):
             ORDER BY m.created_at ASC
         """, (group_id,))
     else:
+        # Fetch all private messages between two users
         cursor.execute("""
             SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
             FROM Messages m
@@ -1706,16 +1688,29 @@ def handle_send_message(data):
 
     messages = cursor.fetchall()
 
+    # ✅ Serialize timestamps
     for msg in messages:
         msg['created_at'] = serialize_datetime(msg['created_at'])
 
-    if group_id:
-        socketio.emit("chat_history", messages, room=group_id)
-    else:
-        socketio.emit("chat_history", messages, room=sender_id)
-        socketio.emit("chat_history", messages, room=receiver_id)
+    # ✅ Choose the correct room
+    room_to_emit = group_id if group_id != 'UNI' else receiver_id
 
-    print(f"📤 Chat history sent (room={group_id or sender_id}/{receiver_id}) with {len(messages)} messages")
+    # ✅ Emit the entire chat history
+    socketio.emit('chat_history', messages, room=room_to_emit)
+    print(f"Chat history sent to room {room_to_emit} with {len(messages)} messages")
+
+    # ✅ Emit only the new message to the sender as confirmation
+    message_data = {
+        "sender_id": sender_id,
+        "receiver_id": receiver_id,
+        "group_id": group_id,
+        "message": message,
+        "created_at": serialize_datetime(datetime.now())
+    }
+    socketio.emit("new_message", message_data, room=sender_id)
+    socketio.emit("new message", message_data, room=receiver_id)
+
+
 
 
 
