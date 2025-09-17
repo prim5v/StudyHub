@@ -1641,67 +1641,75 @@ def handle_get_group_messages(data):
     emit('group_messages', messages)
 
 # --- Join Room ---
-# from flask_socketio import SocketIO, emit, join_room
-# from datetime import datetime
-# from db import get_db, serialize_datetime  # adjust to your imports
+@socketio.on('join_room')
+def handle_join_room(data):
+    room = data.get('room')
+    join_room(room)
+    print(f"User joined room: {room}")
 
-# socketio = SocketIO(cors_allowed_origins="*")
-
-
-# ✅ When a user joins (private or group)
-@socketio.on("join")
-def on_join(data):
-    """
-    data = { "room": <room_id> }
-    room can be a user_id (for private chats) or a group_id (for group chats)
-    """
-    room = data.get("room")
-    if room:
-        join_room(room)
-        print(f"✅ User joined room {room}")
-
-
-# ✅ Handle sending messages
-@socketio.on("send_message")
+# --- Send Message ---
+@socketio.on('send_message')
 def handle_send_message(data):
-    sender_id = data["sender_id"]
-    receiver_id = data.get("receiver_id")   # for private chat
-    group_id = data.get("group_id")         # for group chat
-    message = data["message"]
+    sender_id = data['sender_id']
+    receiver_id = data.get('receiver_id')
+    group_id = data.get('group_id', 'UNI')
+    message = data['message']
 
     db = get_db()
-    cursor = db.cursor()
+    cursor = db.cursor()  # Ensure fetch returns dicts
 
-    # ✅ Insert new message in DB
+    # ✅ Insert new message
     cursor.execute("""
         INSERT INTO Messages (sender_id, receivers_id, group_id, message, created_at)
         VALUES (%s, %s, %s, %s, NOW())
     """, (sender_id, receiver_id, group_id, message))
     db.commit()
 
-    # ✅ Build new message object
-    cursor.execute("SELECT name FROM Users_table WHERE user_id = %s", (sender_id,))
-    sender = cursor.fetchone()
+    # ✅ Determine which conversation to fetch
+    if group_id and group_id != "UNI":  
+        # Fetch all group messages
+        cursor.execute("""
+            SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
+            FROM Messages m
+            JOIN Users_table u ON m.sender_id = u.user_id
+            WHERE m.group_id = %s
+            ORDER BY m.created_at ASC
+        """, (group_id,))
+    else:
+        # Fetch all private messages between two users
+        cursor.execute("""
+            SELECT m.id, m.sender_id, u.name AS sender_name, m.message, m.created_at
+            FROM Messages m
+            JOIN Users_table u ON m.sender_id = u.user_id
+            WHERE (m.sender_id = %s AND m.receivers_id = %s)
+               OR (m.sender_id = %s AND m.receivers_id = %s)
+            ORDER BY m.created_at ASC
+        """, (sender_id, receiver_id, receiver_id, sender_id))
 
+    messages = cursor.fetchall()
+
+    # ✅ Serialize timestamps
+    for msg in messages:
+        msg['created_at'] = serialize_datetime(msg['created_at'])
+
+    # ✅ Choose the correct room
+    room_to_emit = group_id if group_id != 'UNI' else receiver_id
+
+    # ✅ Emit the entire chat history
+    socketio.emit('chat_history', messages, room=room_to_emit)
+    print(f"Chat history sent to room {room_to_emit} with {len(messages)} messages")
+
+    # ✅ Emit only the new message to the sender as confirmation
     message_data = {
         "sender_id": sender_id,
         "receiver_id": receiver_id,
         "group_id": group_id,
-        "sender_name": sender["name"] if sender else "Unknown",
         "message": message,
         "created_at": serialize_datetime(datetime.now())
     }
+    socketio.emit("new_message", message_data, room=sender_id)
+    socketio.emit("new message", message_data, room=receiver_id)
 
-    # ✅ Send to correct rooms
-    if group_id:  
-        # group chat → everyone in the group
-        socketio.emit("new_message", message_data, room=group_id)
-        print(f"📢 Group {group_id}: {sender['name']} -> {message}")
-    else:
-        # private chat → both sender & receiver
-        socketio.emit("new_message", message_data, room=sender_id)
-        socketio.emit("new_message", message_data, room=receiver_id)
-        print(f"📩 Private {sender_id} ↔ {receiver_id}: {message}")
 
 
 
