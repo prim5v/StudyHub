@@ -2129,10 +2129,13 @@ def test_dns():
 
 
 # --- Public Chat ---
+from flask_socketio import join_room, leave_room
+
 @socketio.on("send_public_message")
 def handle_public_message(data):
     sender_id = data.get("sender_id")
     message = data.get("message")
+    sid = request.sid  # current socket id
 
     db = get_db()
     cursor = db.cursor()
@@ -2156,13 +2159,23 @@ def handle_public_message(data):
         "created_at": serialize_datetime(datetime.now())
     }
 
-    # ✅ Broadcast to all users in PUBLIC room
-    socketio.emit("new_public_message", msg_data, broadcast=True)
-    print(f"📢 Public chat: {sender['name']} -> {message}")
+    # ✅ Emit to all in PUBLIC room
+    socketio.emit("new_public_message", msg_data, room="PUBLIC")
+    print(f"📢 [PUBLIC] {sender['name']} ({sid}) -> {message}")
+
 
 @socketio.on("join_public_room")
 def join_public():
+    sid = request.sid  # socket ID of this client
     join_room("PUBLIC")
+    print(f"✅ Socket {sid} joined PUBLIC room")
+
+
+@socketio.on("leave_public_room")
+def leave_public():
+    sid = request.sid
+    leave_room("PUBLIC")
+    print(f"🚪 Socket {sid} left PUBLIC room")
 
 
 # --- Load Public Chat History ---
