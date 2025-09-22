@@ -2129,7 +2129,7 @@ def test_dns():
 
 
 # --- Public Chat ---
-from flask_socketio import join_room, leave_room
+# from flask_socketio import join_room, leave_room
 
 @socketio.on("send_public_message")
 def handle_public_message(data):
@@ -2221,6 +2221,26 @@ def get_public_messages():
 
 
 
+
+
+# route for live followers notification
+
+
+@socketio.on('listen-followers')
+def listen_followers(user_id):
+    """Send followers to the logged-in user in real-time"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM Followers WHERE followings_id = %s ORDER BY created_at DESC",
+            (user_id,)
+        )
+        followers = cursor.fetchall()
+        emit('followers-update', followers)
+    except Error as e:
+        print("Error fetching followers:", e)
+        emit('followers-update', [])
 
 # if __name__ == "__main__":
 #     start_keep_alive()
