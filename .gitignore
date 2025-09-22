@@ -11,3 +11,8 @@ uploads/
 __pycache__/
 *.pyc
 uploads/
+.env
+*.pem
+__pycache__/
+*.pyc
+uploads/

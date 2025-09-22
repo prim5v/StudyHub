@@ -1252,7 +1252,6 @@ def handle_logout(data):
 #         db.rollback()
 #         emit("follow_response", {"status": "error", "message": str(e)})
 
-
 @socketio.on('listen-followers')
 def listen_followers(user_id):
     """Join the user to a room and send initial followers"""
@@ -1270,11 +1269,11 @@ def listen_followers(user_id):
             (user_id,)
         )
         followers = cursor.fetchall()
+        print(f"Initial followers for {user_id}:", followers)
         emit('followers-update', followers)
     except Error as e:
         print("Error fetching followers:", e)
         emit('followers-update', [])
-
 
 
 @socketio.on('follow')
@@ -1329,7 +1328,8 @@ def handle_follow(data):
             (following,)
         )
         updated_followers = cursor.fetchall()
-        socketio.emit('followers-update', updated_followers, to=following)
+        print(f"Sending real-time update to {following}:", updated_followers)
+        socketio.emit('followers-update', updated_followers, room=following)
 
     except Exception as e:
         db.rollback()
