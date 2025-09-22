@@ -1205,10 +1205,82 @@ def handle_logout(data):
 
 
 # ---------------- FOLLOW ----------------
+# @socketio.on('follow')
+# def handle_follow(data):
+#     follower = data.get("follower_id")   # current user_id
+#     following = data.get("following_id") # user_id to follow
+
+#     if not follower or not following:
+#         emit("follow_response", {"status": "error", "message": "Missing follower or following id"})
+#         return
+
+#     db = get_db()
+#     cursor = db.cursor()
+#     try:
+#         # Prevent duplicate follows
+#         cursor.execute(
+#             "SELECT * FROM Followers WHERE followers_id=%s AND followings_id=%s",
+#             (follower, following)
+#         )
+#         if cursor.fetchone():
+#             emit("follow_response", {"status": "error", "message": "Already following"})
+#             return
+
+#         # Insert follow record
+#         cursor.execute(
+#             "INSERT INTO Followers (followers_id, followings_id) VALUES (%s, %s)",
+#             (follower, following)
+#         )
+#         db.commit()
+
+#         # Get updated follower count
+#         cursor.execute(
+#             "SELECT COUNT(*) AS followers_count FROM Followers WHERE followings_id=%s",
+#             (following,)
+#         )
+#         count = cursor.fetchone()["followers_count"]
+
+#         # Send response to frontend
+#         emit("follow_response", {
+#             "status": "success",
+#             "message": "Followed successfully",
+#             "followers_count": count,
+#             "following_id": following
+#         })
+
+#     except Exception as e:
+#         db.rollback()
+#         emit("follow_response", {"status": "error", "message": str(e)})
+
+
+@socketio.on('listen-followers')
+def listen_followers(user_id):
+    """Join the user to a room and send initial followers"""
+    try:
+        join_room(user_id)
+        print(f"User {user_id} joined room {user_id}")
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT f.id, f.followers_id, f.followings_id, f.created_at, u.name, u.profile_pic "
+            "FROM Followers f "
+            "LEFT JOIN Users u ON u.user_id = f.followers_id "
+            "WHERE f.followings_id = %s ORDER BY f.created_at DESC",
+            (user_id,)
+        )
+        followers = cursor.fetchall()
+        emit('followers-update', followers)
+    except Error as e:
+        print("Error fetching followers:", e)
+        emit('followers-update', [])
+
+
+
 @socketio.on('follow')
 def handle_follow(data):
-    follower = data.get("follower_id")   # current user_id
-    following = data.get("following_id") # user_id to follow
+    follower = data.get("follower_id")
+    following = data.get("following_id")
 
     if not follower or not following:
         emit("follow_response", {"status": "error", "message": "Missing follower or following id"})
@@ -1233,14 +1305,14 @@ def handle_follow(data):
         )
         db.commit()
 
-        # Get updated follower count
+        # Get updated follower count for initiator
         cursor.execute(
             "SELECT COUNT(*) AS followers_count FROM Followers WHERE followings_id=%s",
             (following,)
         )
         count = cursor.fetchone()["followers_count"]
 
-        # Send response to frontend
+        # Respond to follower (initiator)
         emit("follow_response", {
             "status": "success",
             "message": "Followed successfully",
@@ -1248,11 +1320,20 @@ def handle_follow(data):
             "following_id": following
         })
 
+        # --- Real-time update to the followed user ---
+        cursor.execute(
+            "SELECT f.id, f.followers_id, f.followings_id, f.created_at, u.name, u.profile_pic "
+            "FROM Followers f "
+            "LEFT JOIN Users u ON u.user_id = f.followers_id "
+            "WHERE f.followings_id=%s ORDER BY f.created_at DESC",
+            (following,)
+        )
+        updated_followers = cursor.fetchall()
+        socketio.emit('followers-update', updated_followers, to=following)
+
     except Exception as e:
         db.rollback()
         emit("follow_response", {"status": "error", "message": str(e)})
-
-
 
 
 # ---------------- UNFOLLOW ----------------
@@ -2226,21 +2307,48 @@ def get_public_messages():
 # route for live followers notification
 
 
-@socketio.on('listen-followers')
-def listen_followers(user_id):
-    """Send followers to the logged-in user in real-time"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM Followers WHERE followings_id = %s ORDER BY created_at DESC",
-            (user_id,)
-        )
-        followers = cursor.fetchall()
-        emit('followers-update', followers)
-    except Error as e:
-        print("Error fetching followers:", e)
-        emit('followers-update', [])
+# @socketio.on('listen-followers')
+# def listen_followers(user_id):
+#     """Join the user to a room and send initial followers"""
+#     try:
+#         # Join room based on user ID
+#         join_room(user_id)
+#         print(f"User {user_id} joined room {user_id}")
+
+#         # Fetch current followers
+#         conn = get_db()
+#         cursor = conn.cursor()
+#         cursor.execute(
+#             "SELECT * FROM Followers WHERE followings_id = %s ORDER BY created_at DESC",
+#             (user_id,)
+#         )
+#         followers = cursor.fetchall()
+#         emit('followers-update', followers)  # send initial followers
+#     except Error as e:
+#         print("Error fetching followers:", e)
+#         emit('followers-update', [])
+
+
+
+# # Helper function to emit updates to a specific user
+# def emit_new_follower(following_id):
+#     """Call this whenever a new follower is added in DB"""
+#     try:
+#         conn = get_db()
+#         cursor = conn.cursor()
+#         cursor.execute(
+#             "SELECT f.id, f.followers_id, f.followings_id, f.created_at, u.name, u.profile_pic "
+#             "FROM Followers f "
+#             "LEFT JOIN Users u ON u.user_id = f.followers_id "
+#             "WHERE f.followings_id = %s "
+#             "ORDER BY f.created_at DESC",
+#             (following_id,)
+#         )
+#         followers = cursor.fetchall()
+#         socketio.emit('followers-update', followers, to=following_id)
+#     except Error as e:
+#         print("Error emitting new follower:", e)
+
 
 # if __name__ == "__main__":
 #     start_keep_alive()
